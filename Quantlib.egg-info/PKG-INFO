@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: Quantlib
+Version: 1.1.0
+Summary: Quant Library for Market Analysis and Automation
+Author: SadalSuud
+Author-email: kathancpandya@gmail.com
+Requires-Python: >=3.9
+Requires-Dist: pandas>=2.0.0
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: requests
+Requires-Dist: plotly
+Requires-Dist: scipy
+Requires-Dist: numba
+Requires-Dist: tqdm
+Requires-Dist: fyers-apiv3
+Requires-Dist: discord.py
+Requires-Dist: scikit-learn
+Requires-Dist: matplotlib
+Dynamic: author
+Dynamic: author-email
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
