@@ -1,4 +1,4 @@
-def calculate_options_charges(buy_price, sell_price, quantity, brokerage = 20, exchange_txn_charges = 0.0003503,sebi_charges_per = 0.000001,stamp_duty_per = 0.00003):
+def calculate_options_charges(buy_price, sell_price, quantity, brokerage = 00, exchange_txn_charges = 0.0003503,sebi_charges_per = 0.000001,stamp_duty_per = 0.00003):
     
     """
     Calculate the detailed breakdown of charges and profit/loss for an options trade.
@@ -98,3 +98,23 @@ def convert_number_to_human_format(num: float, precision: int = 1) -> str:
         idx += 1
     
     return f"{sign}{num:.{precision}f}{suffixes[idx]}"
+
+
+def format_indian_number(num):
+    num = float(num)
+
+    # Crores
+    if num >= 1e7:
+        return f"{num/1e7:.2f} Cr".rstrip('0').rstrip('.')
+
+    # Lakhs
+    elif num >= 1e5:
+        return f"{num/1e5:.2f} Lac".rstrip('0').rstrip('.')
+
+    # Thousands
+    elif num >= 1e3:
+        return f"{num/1e3:.2f}k".rstrip('0').rstrip('.')
+
+    # Below 1000
+    else:
+        return str(int(num)) if num.is_integer() else str(num)

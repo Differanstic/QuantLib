@@ -250,14 +250,31 @@ class fyers_util:
             return df
         else:
             raise ValueError(f"Failed to fetch data: {response}")
+        
+    def option_chain(self,symbol:str,strike_count:int = 5):
+        model = fyersModel.FyersModel(client_id=self.client_id, token=self.access_token,is_async=False, log_path="")
+        data = {
+            "symbol":symbol,
+            "strikecount":strike_count,
+            "timestamp": ""
+        }
+        response = model.optionchain(data=data)
+        return response
+        
     
     
     
 # Load Methods
+base_dir = "C:/DB/"
 def load_index(date,exchange,index):
-    nifty = pd.read_csv(f'E:/DB/{date}/{exchange}/INDEX/{index}.csv',encoding_errors='ignore',on_bad_lines='skip',engine='python')
+    nifty = pd.read_parquet(f'{base_dir}{date}/{exchange}/INDEX/{index}.parquet',engine='pyarrow')
     try:
-        nifty['timestamp'] = pd.to_datetime(nifty['timestamp'],format='%d/%m/%Y %H:%M:%S:%f',errors='coerce')
+        nifty['timestamp'] = (
+            nifty['timestamp']
+            .str.replace(r'(?<=\d{2}):(?=\d{6}$)', '.', regex=True)
+            .pipe(pd.to_datetime, format="%d/%m/%Y %H:%M:%S.%f"))
+        nifty = nifty.sort_values('timestamp')
+        nifty = nifty.reset_index(drop=True)
     except Exception as e:
         print(e)
     nifty = numericfy_df(nifty)
@@ -265,13 +282,13 @@ def load_index(date,exchange,index):
     return nifty.drop(columns=['exch_feed_time'])
 
 def load_mob(dir):
-    mob = pd.read_csv(dir,encoding_errors='ignore',on_bad_lines='skip',engine='python')
+    mob = pd.read_parquet(dir,engine='pyarrow')
     mob['timestamp'] = pd.to_datetime(mob['timestamp'],format='%d/%m/%Y %H:%M:%S:%f',dayfirst=True,errors='coerce')
     mob = numericfy_df(mob)
     return mob
 
 def load_option(date,exchange,symbol,option,mob:bool):
-    df = pd.read_csv(f'E:/DB/{date}/{exchange}/OPTIONS/{symbol}/{option}.csv',encoding_errors='ignore',on_bad_lines='skip',engine='python')
+    df = pd.read_parquet(f'{base_dir}{date}/{exchange}/OPTIONS/{symbol}/{option}.parquet',engine='pyarrow')
     df['strike'] = option[:-2]
     nifty = load_index(date,exchange,symbol)
     try:
@@ -284,7 +301,7 @@ def load_option(date,exchange,symbol,option,mob:bool):
         df = pd.merge_asof(df,nifty[['timestamp', 'spot_price']],on='timestamp',direction='backward',tolerance=pd.Timedelta('1s'))
         
         if mob:
-            mob = load_mob(f'E:/DB/{date}/{exchange}/OPTIONS/{symbol}-MOB/{option}.csv')
+            mob = load_mob(f'{base_dir}{date}/{exchange}/OPTIONS/{symbol}-MOB/{option}.parquet')
             mob = mob.sort_values('timestamp')
             df = pd.merge_asof(df,mob,on='timestamp',direction='backward',tolerance=pd.Timedelta('1s'))
             
@@ -292,13 +309,13 @@ def load_option(date,exchange,symbol,option,mob:bool):
     except Exception as e:
         print(option,e)
     df = numericfy_df(df)
-    df = df[df['timestamp'].dt.date == int(date[0:2]) ]
+    
     return df.drop(columns=['exch_feed_time'])
     
     
 def load_option_chain(date,exchange,symbol,mob:bool):
     option_chain = {}
-    files = glob.glob(f'E:/DB/{date}/{exchange}/OPTIONS/{symbol}/*')
+    files = glob.glob(f'{base_dir}{date}/{exchange}/OPTIONS/{symbol}/*')
     for f in tqdm(files):
         option = f.split('\\')[1].split('.')[0]
         try:
@@ -308,11 +325,11 @@ def load_option_chain(date,exchange,symbol,mob:bool):
     return option_chain
 
 def load_stock(date,exchange,symbol,mob:bool):
-    stock = pd.read_csv(f'E:/DB/{date}/{exchange}/EQUITY/{symbol}.csv',encoding_errors='ignore',on_bad_lines='skip',engine='python')
+    stock = pd.read_parquet(f'{base_dir}{date}/{exchange}/EQUITY/{symbol}.parquet',engine='pyarrow')
     try:
         stock['timestamp'] = pd.to_datetime(stock['timestamp'],format='%d/%m/%Y %H:%M:%S:%f',errors='coerce')
         if mob:
-            stock_mob = pd.read_csv(f'E:/DB/{date}/{exchange}/EQUITY-MOB/{symbol}.csv',encoding_errors='ignore',on_bad_lines='skip',engine='python')
+            stock_mob = pd.read_parquet(f'{base_dir}{date}/{exchange}/EQUITY-MOB/{symbol}.parquet',engine='pyarrow')
             stock_mob['timestamp'] = pd.to_datetime(stock_mob['timestamp'],format='%d/%m/%Y %H:%M:%S:%f',errors='coerce')
             stock = stock.sort_values('timestamp')
             stock_mob = stock_mob.sort_values('timestamp')
@@ -326,18 +343,50 @@ def load_stock(date,exchange,symbol,mob:bool):
 
 import math    
 import datetime as dt
-def load_atm_options(date,exchange,symbol,mob:bool):
+def load_atm_options(date,exchange,symbol,strike_gap = 50,mob=False):
     underlying = load_index(date,exchange,symbol)
     start = underlying[underlying['timestamp'].dt.time >= dt.time(9, 15)]
     spot = start.iloc[0]['ltp']
     print('Spot:',spot)
-    ce_spot = f'{math.floor(spot / 50) * 50}CE'
-    pe_spot = f'{math.ceil(spot / 50) * 50 }PE' 
+    ce_spot = f'{math.floor(spot / strike_gap) * strike_gap}CE'
+    pe_spot = f'{math.ceil(spot / strike_gap) * strike_gap }PE' 
     print(ce_spot,pe_spot)
     ce = load_option(date,exchange,symbol,ce_spot,mob)
     pe = load_option(date,exchange,symbol,pe_spot,mob)
     return underlying,ce,pe
 
-def numericfy_df(df):
-    df.loc[:, df.columns != 'timestamp'] = df.loc[:, df.columns != 'timestamp'].apply(pd.to_numeric, errors='coerce')
+### Futures Data
+def load_futures(date,exchange,symbol,mob:bool,index=True):
+    path = base_dir+date+'/'+exchange+'/FUTURES/'+symbol+'.parquet'
+    mob_path = base_dir+date+'/'+exchange+'/FUTURES-MOB/'+symbol+'.parquet'
+    df = pd.read_parquet(path,engine='pyarrow')
+    underlying = load_index(date,exchange,symbol) if index else load_stock(date,exchange,symbol,0)
+    
+    df['timestamp'] = pd.to_datetime(df['timestamp'],format='%d/%m/%Y %H:%M:%S:%f',errors='coerce')
+    df.sort_values(by='timestamp',inplace=True)
+    underlying.rename(columns={'ltp':'spot_price'},inplace=True)
+    df = pd.merge_asof(df,underlying[['timestamp','spot_price']],on='timestamp',direction='backward',tolerance=pd.Timedelta('500s'),)
+    
+    if mob:
+        mob = pd.read_parquet(mob_path,engine='pyarrow')
+        mob['timestamp'] = pd.to_datetime(mob['timestamp'],format='%d/%m/%Y %H:%M:%S:%f',errors='coerce')
+        mob.sort_values(by='timestamp',inplace=True)
+        df = pd.merge_asof(df,mob,on='timestamp',direction='backward',tolerance=pd.Timedelta('500s'),)
+        
+    
     return df
+
+
+def numericfy_df(df):
+    for col in df.columns:
+        if col != 'timestamp':
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    return df
+
+def get_dates():
+    import glob
+    list = glob.glob(f'{base_dir}*')
+    for i in range(len(list)) :
+        list[i] = list[i].split('\\')[1]
+    #list.remove('Parquet')
+    return list

@@ -3,8 +3,11 @@ Quantlib/CatDB.py
 Quantlib/__init__.py
 Quantlib/backtest.py
 Quantlib/data_loader.py
+Quantlib/data_utils.py
 Quantlib/feature_engg.py
 Quantlib/fyers_util.py
+Quantlib/google_utils.py
+Quantlib/kotak_neo.py
 Quantlib/memory.py
 Quantlib/messager.py
 Quantlib/option_greeks.py
@@ -17,3 +20,7 @@ Quantlib.egg-info/SOURCES.txt
 Quantlib.egg-info/dependency_links.txt
 Quantlib.egg-info/requires.txt
 Quantlib.egg-info/top_level.txt
+Quantlib/ml/__init__.py
+Quantlib/ml/feature_engineering.py
+Quantlib/ml/save_load.py
+Quantlib/ml/train.py

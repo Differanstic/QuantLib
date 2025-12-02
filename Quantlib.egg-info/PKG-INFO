@@ -16,6 +16,9 @@ Requires-Dist: fyers-apiv3
 Requires-Dist: discord.py
 Requires-Dist: scikit-learn
 Requires-Dist: matplotlib
+Requires-Dist: xgboost
+Requires-Dist: torch
+Requires-Dist: torchdiffeq
 Dynamic: author
 Dynamic: author-email
 Dynamic: requires-dist

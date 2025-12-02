@@ -7,12 +7,11 @@ from tqdm import tqdm
 from joblib import Parallel, delayed
 from concurrent.futures import ThreadPoolExecutor
 import math
-
 import os
 
 
-resource_dir = 'C:/Users/manav/OneDrive/Desktop/sad-al-suud/Sadalsuud/Resources'
-data_dir = 'C:/Users/manav/OneDrive/Desktop/sad-al-suud/Sadalsuud/DB'
+resource_dir = 'C:/Kotak_DB/Resources'
+data_dir = 'C:/Kotak_DB/DB'
 
 all_keys = ['timestamp','bp', 'bp1', 'bp2', 'bp3', 'bp4', 
                 'bq', 'bq1', 'bq2', 'bq3', 'bq4', 
@@ -26,65 +25,59 @@ def get_dates():
     return [name for name in os.listdir(path) if os.path.isdir(os.path.join(path, name))]
 
 def loadNifty(date):
-    index_path = f'{data_dir}/Index/{date}/Nifty 50.csv'
-    nifty_df = pd.read_csv(index_path, header=None, usecols=[0, 1], engine='c')
+    index_path = f'{data_dir}/Index/{date}/Nifty 50.parquet'
+    nifty_df = pd.read_parquet(index_path, engine='pyarrow')
+    nifty_df = nifty_df.iloc[:, :2]
     nifty_df.columns = ['timestamp', 'spot_price']
     nifty_df['timestamp'] = pd.to_datetime(date + ' ' + nifty_df['timestamp'], format='%d%B%y %H:%M:%S:%f')
     return nifty_df
 
 
-def loadOptionMOB(date,strike,nifty_df,window = 500):
+def loadOption(date,strike,load_mob:bool=False):
+    
     d = datetime.strptime(date,'%d%B%y')
     cutoff = datetime.strptime('20August25','%d%B%y')
     if d < cutoff:
-        df = pd.read_csv(f'{data_dir}/NiftyFNO/{date}/{strike}.csv', header=None, usecols=[0, 1, 2, 3, 4], engine='c', low_memory=False)
+        df = pd.read_parquet(f'{data_dir}/NiftyFNO/{date}/{strike}.parquet', engine='pyarrow')
+        df = df.iloc[:, :5]
         df.columns = ['timestamp', 'ltp', 'ltq', 'buyers', 'sellers'] 
     else:
-        df = pd.read_csv(f'{data_dir}/NiftyFNO/{date}/{strike}.csv', header=None, usecols=[0, 1, 2, 3, 4,5], engine='c', low_memory=False)
+        df = pd.read_parquet(f'{data_dir}/NiftyFNO/{date}/{strike}.parquet', engine='pyarrow')
+        df = df.iloc[:, :6]
         df.columns = ['timestamp', 'ltp', 'ltq', 'buyers', 'sellers','oi'] 
         df['oi'] = df['oi'].replace(0, np.nan)
         df['oi'] = df['oi'].ffill()
-    df['timestamp'] = pd.to_datetime(date + ' ' + df['timestamp'], format='%d%B%y %H:%M:%S:%f')
+        
+    df['timestamp'] = pd.to_datetime(date + ' ' + df['timestamp'], format="%d%B%y %H:%M:%S:%f",errors='coerce')
     df['ltq'] = df['ltq'].replace(0, np.nan)
     df['buyers'] = df['buyers'].replace(0, np.nan)
     df['sellers'] = df['sellers'].replace(0, np.nan)
     df[['ltq', 'buyers', 'sellers']] = df[['ltq', 'buyers', 'sellers']].ffill()
     df = df.sort_values('timestamp')
+    
+    
+    
     # MOB DF
-    mob_df = pd.read_csv(f'{data_dir}/NiftyFNOMOB/{date}/{strike}.csv', header=None, engine='c', low_memory=False)
-    mob_df = mob_df.replace(0,np.nan)
-    mob_df.ffill(inplace=True)
+    if load_mob:
+        mob_df = pd.read_parquet(f'{data_dir}/NiftyFNOMOB/{date}/{strike}.parquet', engine='pyarrow')
+        mob_df = mob_df.replace(0,np.nan)
+        mob_df.ffill(inplace=True)
+
+        mob_df.columns = all_keys
+        mob_df['timestamp'] = pd.to_datetime(date + ' ' + mob_df['timestamp'], format='%d%B%y %H:%M:%S:%f')
+        # Merging Option_DF and MOB_DF
+        df = df.sort_values('timestamp')
+        mob_df = mob_df.sort_values('timestamp')
+        all_timestamps = pd.concat([mob_df['timestamp'], df['timestamp']]).drop_duplicates().sort_values()
+
+        mob_df_reindexed = mob_df.set_index('timestamp').reindex(all_timestamps).ffill().reset_index()
+        df_reindexed = df.set_index('timestamp').reindex(all_timestamps).ffill().reset_index()
+
+        df = pd.concat([mob_df_reindexed,  df_reindexed.drop(columns='timestamp')], axis=1)
+
     
-    mob_df.columns = all_keys
-    mob_df['timestamp'] = pd.to_datetime(date + ' ' + mob_df['timestamp'], format='%d%B%y %H:%M:%S:%f')
-    # Merging Option_DF and MOB_DF
-    df = df.sort_values('timestamp')
-    mob_df = mob_df.sort_values('timestamp')
-    all_timestamps = pd.concat([mob_df['timestamp'], df['timestamp']]).drop_duplicates().sort_values()
-
-    mob_df_reindexed = mob_df.set_index('timestamp').reindex(all_timestamps).ffill().reset_index()
-    df_reindexed = df.set_index('timestamp').reindex(all_timestamps).ffill().reset_index()
-
-    df = pd.concat([mob_df_reindexed,  df_reindexed.drop(columns='timestamp')], axis=1)
     
-    df = df.sort_values('timestamp')
     
-    nifty_df = nifty_df.sort_values('timestamp')
-        # 1️⃣ Get union of timestamps
-    all_timestamps = pd.Series(
-        pd.concat([nifty_df['timestamp'], df['timestamp']])
-    ).drop_duplicates().sort_values()
-
-    # 2️⃣ Reindex both dataframes to include all timestamps
-    nifty_reindexed = nifty_df.set_index('timestamp').reindex(all_timestamps).ffill().reset_index()
-    df_reindexed = df.set_index('timestamp').reindex(all_timestamps).ffill().reset_index()
-
-    # 3️⃣ Combine
-    df = pd.concat([
-        nifty_reindexed,
-        df_reindexed.drop(columns='timestamp')  # drop duplicate timestamp
-    ], axis=1)
-
     expiry_cutoff = pd.to_datetime("2025-08-31")
     if (df["timestamp"] > expiry_cutoff).any():
         Expiry = "Tuesday"
@@ -118,15 +111,7 @@ def loadOptionMOB(date,strike,nifty_df,window = 500):
         df['dex'] = df['delta'] * df['oi'] * 75 * df['spot_price']
 
 
-    df['tbq'] = (df['bq'] + df['bq1'] + df['bq2'] + df['bq3'] + df['bq4'])
-    df['tsq'] = (df['sq'] + df['sq1'] + df['sq2'] + df['sq3'] + df['sq4'])
-    df['tbo'] = (df['bno1'] + df['bno2'] + df['bno3'] + df['bno4'] + df['bno5']) 
-    df['tso'] = (df['sno1'] + df['sno2'] + df['sno3'] + df['sno4'] + df['sno5'])
-    df['buy_spread'] = df['ltp'] - df['bp']   
-    df['sell_spread'] = df['sp'] - df['ltp']
-    df['mid'] = (df['bp'] + df['sp'])/2
-
-        
+  
     df.drop(columns=[ 'bno1', 'bno2', 'bno3', 'bno4', 'bno5', 'sno1', 'sno2', 'sno3', 'sno4', 'sno5'],inplace=True)
     return df 
 
@@ -169,7 +154,8 @@ def loadOptionChain(date, window, n=5):
 ## Nifty 50 Stocks
 def load_stock_mob(date,stock,window=500):
     try:
-        df = pd.read_csv(f'{data_dir}/NiftyEquity/{date}/{stock}.csv', header=None, usecols=[0, 1, 2, 3, 4], engine='c', low_memory=False)
+        df = pd.read_parquet(f'{data_dir}/NiftyEquity/{date}/{stock}.parquet', engine='pyarrow')
+        df = df.iloc[:, :5]
         df.columns = ['timestamp', 'ltp', 'ltq', 'buyers', 'sellers']
         df['timestamp'] = pd.to_datetime(date + ' ' + df['timestamp'], format='%d%B%y %H:%M:%S:%f')
         df['ltq'] = df['ltq'].replace(0, np.nan)
@@ -177,7 +163,7 @@ def load_stock_mob(date,stock,window=500):
         df['sellers'] = df['sellers'].replace(0, np.nan)
         df[['ltq', 'buyers', 'sellers']] = df[['ltq', 'buyers', 'sellers']].ffill()
         # MOB DF
-        mob_df = pd.read_csv(f'{data_dir}/NiftyEquityMOB/{date}/{stock}.csv', header=None, engine='c', low_memory=False)
+        mob_df = pd.read_parquet(f'{data_dir}/NiftyEquityMOB/{date}/{stock}.parquet', engine='pyarrow')
         mob_df = mob_df.replace(0,np.nan)
         mob_df.ffill(inplace=True)
         all_keys = ['timestamp1','bp', 'bp1', 'bp2', 'bp3', 'bp4', 
@@ -211,14 +197,10 @@ def load_stock_mob(date,stock,window=500):
         print(f"Error loading {stock} for date {date}: {e}")
 def _load_stock(file_path, stock, date):
     """Helper: load one stock CSV fast."""
-    stock_df = pd.read_csv(
-        file_path,
-        header=None,
-        usecols=[0, 1, 2, 3, 4],
-        names=["timestamp", "ltp", "ltq", "buyers", "sellers"],
-        engine="c"
-    )
-    # parse timestamp directly in read_csv (faster than to_datetime afterwards)
+    stock_df = pd.read_parquet(file_path,engine="pyarrow")
+    stock_df = stock_df.iloc[:, :5]
+    stock_df.columns = ["timestamp", "ltp", "ltq", "buyers", "sellers"]
+    
     stock_df["timestamp"] = pd.to_datetime(
         date + " " + stock_df["timestamp"],
         format="%d%B%y %H:%M:%S:%f",
@@ -237,9 +219,8 @@ def _load_stock(file_path, stock, date):
     return stock_df
 
 def _load_stock(path, stock, date):
-    stock_df = pd.read_csv(
-        path, header=None, usecols=[0, 1, 2, 3, 4], engine="c", low_memory=False
-    )
+    stock_df = pd.read_parquet(path, engine="c")
+    stock_df = df = df.iloc[:, :5]
     stock_df.columns = ["timestamp", f"ltp_{stock}", f"ltq_{stock}", f"buyers_{stock}", f"sellers_{stock}"]
     stock_df["timestamp"] = pd.to_datetime(
         date + " " + stock_df["timestamp"], format="%d%B%y %H:%M:%S:%f"
@@ -250,8 +231,8 @@ def _load_stock(path, stock, date):
     return stock_df
 
 def loadNifty50Stock(date, max_workers=8):
-    stock_list = pd.read_csv(f"{resource_dir}/nifty.csv")["Symbol"].tolist()
-    paths = [f"{data_dir}/NiftyEquity/{date}/{stock}.csv" for stock in stock_list]
+    stock_list = pd.read_parquet(f"{resource_dir}/nifty.parquet")["Symbol"].tolist()
+    paths = [f"{data_dir}/NiftyEquity/{date}/{stock}.parquet" for stock in stock_list]
 
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
         results = list(

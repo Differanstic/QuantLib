@@ -9,3 +9,6 @@ fyers-apiv3
 discord.py
 scikit-learn
 matplotlib
+xgboost
+torch
+torchdiffeq

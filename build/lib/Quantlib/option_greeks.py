@@ -157,14 +157,30 @@ def calc_weekly_expiry(df, time_col, target_day_str):
     return df
 
 
-def bs_price(S, K, T, r, q, sigma, option_type="C"):
-    d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+
+def bs_price(S, K, T, r, sigma, option_type="C"):
+    """
+    Black-Scholes option pricing formula without dividend yield (q=0)
+
+    Parameters:
+    S : float - Spot price
+    K : float - Strike price
+    T : float - Time to maturity (in years)
+    r : float - Risk-free interest rate
+    sigma : float - Volatility
+    option_type : str - "C" for Call, "P" for Put
+
+    Returns:
+    float - Theoretical option price
+    """
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
     d2 = d1 - sigma * np.sqrt(T)
 
     if option_type.upper() == "C":
-        return S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+        return S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
     else:
-        return K * np.exp(-r * T) * norm.cdf(-d2) - S * np.exp(-q * T) * norm.cdf(-d1)
+        return K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+
 
 # Implied Spot solver
 def get_implied_spot(ltp, K, T, r, q, iv, option_type="C"):
