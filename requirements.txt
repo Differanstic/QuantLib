@@ -10,4 +10,7 @@ discord.py
 scikit-learn
 matplotlib
 xgboost
-
+google-auth
+google-auth-oauthlib
+google-api-python-client
+gspread
