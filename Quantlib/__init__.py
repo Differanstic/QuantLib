@@ -12,4 +12,4 @@ from . import CatDB
 from . import visualize
 from . import volume_engg
 from . import kotak_neo
-from . import google_utils
+from .google_utils import google_utils
