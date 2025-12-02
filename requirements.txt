@@ -10,5 +10,4 @@ discord.py
 scikit-learn
 matplotlib
 xgboost
-torch
-torchdiffeq
+
