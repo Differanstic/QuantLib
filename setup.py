@@ -3,7 +3,7 @@ with open("requirements.txt") as f:
     requirements = f.read().splitlines()
 setup(
     name="Quantlib",
-    version="1.1.0",
+    version="1.1.1",
     author="SadalSuud",
     author_email="kathancpandya@gmail.com",
     description="Quant Library for Market Analysis and Automation",
