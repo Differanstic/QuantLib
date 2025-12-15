@@ -9,7 +9,6 @@ fyers-apiv3
 discord.py
 scikit-learn
 matplotlib
-xgboost
 google-auth
 google-auth-oauthlib
 google-api-python-client
