@@ -253,7 +253,7 @@ class fyers_util:
             raise ValueError(f"Failed to fetch data: {response}")
         
     def option_chain(self,symbol:str,strike_count:int = 5):
-        model = fyersModel.FyersModel(client_id=self.client_id, token=self.access_token,is_async=False, log_path=base_dir)
+        model = fyersModel.FyersModel(client_id=self.client_id, token=self.access_token,is_async=False, log_path=self.log_dir)
         data = {
             "symbol":symbol,
             "strikecount":strike_count,
