@@ -1,15 +1,20 @@
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_absolute_error, root_mean_squared_error, r2_score
-from sklearn.linear_model import LinearRegression, Ridge
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import MinMaxScaler, RobustScaler,StandardScaler
+from sklearn.linear_model import LinearRegression, Ridge,LogisticRegression
+from sklearn.ensemble import RandomForestRegressor,RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from xgboost import XGBRegressor
+from xgboost import XGBClassifier
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-from sklearn.preprocessing import MinMaxScaler, RobustScaler
+from sklearn.svm import SVC
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score,
+    f1_score, roc_auc_score,silhouette_score,mean_absolute_error, root_mean_squared_error, r2_score
+)
+
+
 
 
 def kmeans_clustering(df, target, features, k, scaler=None, showGraph=True):
@@ -192,6 +197,177 @@ def train_models(df, target, features, scaler='robust', test_size=0.2, random_sp
         print("⚠️ XGBoost not available:", e)
 
     return results, scaler_obj
+
+def evaluate_classification(y_true, y_pred):
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score
+    
+    metrics = {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "precision": precision_score(y_true, y_pred, zero_division=0),
+        "recall": recall_score(y_true, y_pred, zero_division=0),
+        "f1": f1_score(y_true, y_pred, zero_division=0),
+    }
+
+    # AUC only for binary classification
+    try:
+        metrics["roc_auc"] = roc_auc_score(y_true, y_pred)
+    except:
+        metrics["roc_auc"] = None
+
+    return metrics
+
+def train_classification_models(df, target, features, scaler='robust', 
+                                test_size=0.2, random_split=False):
+    """
+    Train multiple classification models with optional scaling and 
+    time-series OR random splitting.
+
+    Parameters:
+    -----------
+    df : DataFrame
+    target : str
+    features : list
+    scaler : 'standard' | 'minmax' | 'robust' | None | existing scaler object
+    random_split : bool → if False (default), uses time-ordered split.
+
+    Returns:
+    --------
+    results : dict
+        model_name → {model, pred, prob, eval, actual}
+    scaler_obj : fitted scaler object or None
+    """
+
+    df = df.copy().dropna(subset=features + [target])
+
+    X = df[features].values
+    y = df[target].values
+
+    # ---------------- Scaling Logic ----------------
+    scaler_obj = None
+    if type(scaler) == str:
+        if scaler.lower() == 'standard':
+            scaler_obj = StandardScaler()
+        elif scaler.lower() == 'minmax':
+            scaler_obj = MinMaxScaler()
+        elif scaler.lower() == 'robust':
+            scaler_obj = RobustScaler()
+        else:
+            scaler_obj = None
+
+        if scaler_obj:
+            X = scaler_obj.fit_transform(X)
+
+    elif scaler is None or scaler is False or scaler == 'none':
+        scaler_obj = None
+
+    elif hasattr(scaler, "transform"):     # existing scaler
+        scaler_obj = scaler
+        X = scaler_obj.transform(X)
+
+    # ---------------- Splitting Logic ----------------
+    if random_split:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=test_size, shuffle=True, random_state=42
+        )
+    else:
+        split_idx = int(len(X) * (1 - test_size))
+        X_train, X_test = X[:split_idx], X[split_idx:]
+        y_train, y_test = y[:split_idx], y[split_idx:]
+
+    results = {}
+
+    # =====================================================
+    # 1️⃣ Logistic Regression
+    # =====================================================
+    lr = LogisticRegression(max_iter=200)
+    lr.fit(X_train, y_train)
+
+    y_pred_lr = lr.predict(X_test)
+    y_prob_lr = lr.predict_proba(X_test)[:, 1]
+
+    results["LogisticRegression"] = {
+        "model": lr,
+        "pred": y_pred_lr,
+        "prob": y_prob_lr,
+        "eval": evaluate_classification(y_test, y_pred_lr),
+        "actual": y_test
+    }
+
+    # =====================================================
+    # 2️⃣ Random Forest Classifier
+    # =====================================================
+    rf = RandomForestClassifier(
+        n_estimators=200,
+        max_depth=8,
+        random_state=42
+    )
+    rf.fit(X_train, y_train)
+
+    y_pred_rf = rf.predict(X_test)
+    y_prob_rf = rf.predict_proba(X_test)[:, 1]
+
+    results["RandomForest"] = {
+        "model": rf,
+        "pred": y_pred_rf,
+        "prob": y_prob_rf,
+        "eval": evaluate_classification(y_test, y_pred_rf),
+        "actual": y_test
+    }
+
+    # =====================================================
+    # 3️⃣ XGBoost Classifier
+    # =====================================================
+    try:
+        xgb = XGBClassifier(
+            n_estimators=300,
+            max_depth=6,
+            learning_rate=0.05,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            eval_metric="logloss",
+            random_state=42
+        )
+        xgb.fit(X_train, y_train)
+
+        y_pred_xgb = xgb.predict(X_test)
+        y_prob_xgb = xgb.predict_proba(X_test)[:, 1]
+
+        results["XGBoost"] = {
+            "model": xgb,
+            "pred": y_pred_xgb,
+            "prob": y_prob_xgb,
+            "eval": evaluate_classification(y_test, y_pred_xgb),
+            "actual": y_test
+        }
+
+    except Exception as e:
+        print("⚠️ XGBoost unavailable:", e)
+
+    # =====================================================
+    # 4️⃣ SVC (Linear Kernel — lightweight)
+    # =====================================================
+    try:
+        svc = SVC(kernel='linear', probability=True)
+        svc.fit(X_train, y_train)
+
+        y_pred_svc = svc.predict(X_test)
+        y_prob_svc = svc.predict_proba(X_test)[:, 1]
+
+        results["SVC"] = {
+            "model": svc,
+            "pred": y_pred_svc,
+            "prob": y_prob_svc,
+            "eval": evaluate_classification(y_test, y_pred_svc),
+            "actual": y_test
+        }
+
+    except Exception as e:
+        print("⚠️ SVC unavailable:", e)
+
+    return results, scaler_obj
+
+
+
 
 
 ### Neural ODE Model ###

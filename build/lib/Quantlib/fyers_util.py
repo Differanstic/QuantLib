@@ -165,7 +165,7 @@ class fyers_util:
             client_id=self.client_id,  # replace with actual client_id
             is_async=False,
             token=self.access_token,
-            log_path=""
+            log_path="C:/fyers_logs/"
         )
     
         # Build request payload
@@ -226,7 +226,7 @@ class fyers_util:
 
     def get_intraday_data(self,symbol,start_date,end_date,resolution):
         import time
-        fyers = fyersModel.FyersModel(client_id=self.client_id,is_async=False,token=self.access_token)
+        fyers = fyersModel.FyersModel(client_id=self.client_id,is_async=False,token=self.access_token,log_path="C:/fyers_logs/")
         from_timestamp = int(time.mktime(time.strptime(start_date, "%Y-%m-%d %H:%M:%S")))
         to_timestamp = int(time.mktime(time.strptime(end_date, "%Y-%m-%d %H:%M:%S")))
         data = {
@@ -252,7 +252,7 @@ class fyers_util:
             raise ValueError(f"Failed to fetch data: {response}")
         
     def option_chain(self,symbol:str,strike_count:int = 5):
-        model = fyersModel.FyersModel(client_id=self.client_id, token=self.access_token,is_async=False, log_path="")
+        model = fyersModel.FyersModel(client_id=self.client_id, token=self.access_token,is_async=False, log_path="C:/fyers_logs/")
         data = {
             "symbol":symbol,
             "strikecount":strike_count,
@@ -347,10 +347,10 @@ def load_atm_options(date,exchange,symbol,strike_gap = 50,mob=False):
     underlying = load_index(date,exchange,symbol)
     start = underlying[underlying['timestamp'].dt.time >= dt.time(9, 15)]
     spot = start.iloc[0]['ltp']
-    print('Spot:',spot)
+    
     ce_spot = f'{math.floor(spot / strike_gap) * strike_gap}CE'
     pe_spot = f'{math.ceil(spot / strike_gap) * strike_gap }PE' 
-    print(ce_spot,pe_spot)
+    
     ce = load_option(date,exchange,symbol,ce_spot,mob)
     pe = load_option(date,exchange,symbol,pe_spot,mob)
     return underlying,ce,pe
@@ -383,10 +383,13 @@ def numericfy_df(df):
             df[col] = pd.to_numeric(df[col], errors='coerce')
     return df
 
-def get_dates():
-    import glob
-    list = glob.glob(f'{base_dir}*')
-    for i in range(len(list)) :
-        list[i] = list[i].split('\\')[1]
-    #list.remove('Parquet')
-    return list
+def get_dates(reversed=False):
+    paths = glob.glob(os.path.join(base_dir, "*"))
+    names = [os.path.basename(p) for p in paths]
+
+    # Convert "04DECEMBER25" → datetime
+    def parse_date(s):
+        return datetime.strptime(s, "%d%B%y")
+
+    names = sorted(names, key=parse_date,reverse=reversed)
+    return names

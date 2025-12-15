@@ -1,9 +1,8 @@
 import os
 import json
 import time
-import traceback
 import gspread
-
+from .utils import is_linux_server
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as UserCredentials
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
@@ -33,50 +32,61 @@ class google_utils:
     # =========================================================
     # AUTHENTICATION
     # =========================================================
+    
     def authenticate(self):
-        """Authenticate using either OAuth client or Service Account."""
-        creds = None
+        """Authenticate using OS detection (Linux server vs local)."""
 
-        # Load user credentials (token)
+        creds = None
+        is_linux = is_linux_server()
+
+
+        # 1️⃣ Load saved OAuth token (if exists)
         if os.path.exists(self.token_path):
             try:
-                creds = UserCredentials.from_authorized_user_file(self.token_path, self.SCOPES)
-            except:
+                creds = UserCredentials.from_authorized_user_file(
+                    self.token_path, self.SCOPES
+                )
+            except Exception:
                 creds = None
 
-        # Refresh or recreate creds
+        # 2️⃣ Refresh token
+        if creds and creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+            except Exception:
+                creds = None
+
+        # 3️⃣ Create credentials if needed
         if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    creds.refresh(Request())
-                except Exception:
-                    creds = None
 
-            if not creds:
-                if not os.path.exists(self.creds_path):
-                    raise FileNotFoundError(f"Credentials file not found: {self.creds_path}")
+            if not os.path.exists(self.creds_path):
+                raise FileNotFoundError(f"Credentials file not found: {self.creds_path}")
 
-                with open(self.creds_path, "r") as f:
-                    data = json.load(f)
+            with open(self.creds_path, "r") as f:
+                data = json.load(f)
 
-                # Service Account
-                if data.get("type") == "service_account":
-                    print("🔐 Using Service Account")
-                    creds = ServiceAccountCredentials.from_service_account_file(
-                        self.creds_path, scopes=self.SCOPES
-                    )
+            # 🔐 Service Account (Linux servers)
+            if is_linux or data.get("type") == "service_account":
+                print("🔐 Using Service Account (Linux)")
+                creds = ServiceAccountCredentials.from_service_account_file(
+                    self.creds_path, scopes=self.SCOPES
+                )
 
-                # OAuth User Login
-                else:
-                    print("🌐 Using OAuth Client — opening browser…")
-                    flow = InstalledAppFlow.from_client_secrets_file(self.creds_path, self.SCOPES)
-                    creds = flow.run_local_server(port=0)
-                    with open(self.token_path, "w") as token:
-                        token.write(creds.to_json())
+            # 🌐 OAuth (Windows / macOS)
+            else:
+                print("🌐 Using OAuth (Browser)")
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    self.creds_path, self.SCOPES
+                )
+                creds = flow.run_local_server(port=0)
 
+                with open(self.token_path, "w") as token:
+                    token.write(creds.to_json())
+
+        # 4️⃣ Init clients
         self.creds = creds
         self.gc = gspread.authorize(creds)
-        self.drive = build('drive', 'v3', credentials=creds)
+        self.drive = build("drive", "v3", credentials=creds)
 
     # =========================================================
     # DRIVE HELPERS

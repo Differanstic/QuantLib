@@ -21,7 +21,7 @@ all_keys = ['timestamp','bp', 'bp1', 'bp2', 'bp3', 'bp4',
                 'sno1', 'sno2', 'sno3', 'sno4', 'sno5']
 
 def get_dates():
-    path = 'C:/Users/manav/OneDrive/Desktop/sad-al-suud/Sadalsuud/DB/Index/'
+    path = 'C:/Kotak_DB/DB/'
     return [name for name in os.listdir(path) if os.path.isdir(os.path.join(path, name))]
 
 def loadNifty(date):

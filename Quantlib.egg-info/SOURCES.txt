@@ -1,6 +1,6 @@
 setup.py
-Quantlib/CatDB.py
 Quantlib/__init__.py
+Quantlib/analyze.py
 Quantlib/backtest.py
 Quantlib/data_loader.py
 Quantlib/data_utils.py
@@ -9,7 +9,6 @@ Quantlib/fyers_util.py
 Quantlib/google_utils.py
 Quantlib/kotak_neo.py
 Quantlib/memory.py
-Quantlib/messager.py
 Quantlib/option_greeks.py
 Quantlib/regime_detection.py
 Quantlib/utils.py
