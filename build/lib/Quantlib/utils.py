@@ -1,3 +1,10 @@
+import os
+import platform
+
+def is_linux_server():
+    return platform.system().lower() == "linux"
+
+
 def calculate_options_charges(buy_price, sell_price, quantity, brokerage = 00, exchange_txn_charges = 0.0003503,sebi_charges_per = 0.000001,stamp_duty_per = 0.00003):
     
     """
@@ -70,7 +77,6 @@ def calculate_options_charges(buy_price, sell_price, quantity, brokerage = 00, e
 
     return result
 
-
 def convert_number_to_human_format(num: float, precision: int = 1) -> str:
     """
     Convert a number into human-readable format (e.g., 4.2k, 3.1m, 7.5b).
@@ -98,7 +104,6 @@ def convert_number_to_human_format(num: float, precision: int = 1) -> str:
         idx += 1
     
     return f"{sign}{num:.{precision}f}{suffixes[idx]}"
-
 
 def format_indian_number(num):
     num = float(num)

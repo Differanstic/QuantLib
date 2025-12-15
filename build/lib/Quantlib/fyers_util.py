@@ -10,15 +10,18 @@ import threading
 import glob
 from tqdm import tqdm
 import os
+import math    
+import datetime as dt
+
 
 class fyers_util:
     client_id = "NMZR8DS3BT-100"
-    
+    pin = "2232" 
     secret_key = os.getenv('FYERS_SECRET_KEY')
     if secret_key is None:
         raise ValueError("FYERS_SECRET_KEY environment variable is not set.")
     redirect_uri = "https://trade.fyers.in/api-login/redirect-uri/index.html"
-    pin = "2232" 
+    
     
     def get_token_path(self):
         """
@@ -27,17 +30,15 @@ class fyers_util:
         Linux   → ~/.config/Quantlib/token.json
         """
         if os.name == "nt":  # Windows
-            base_dir = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))
+            self.log_dir = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))
         else:  # Linux / macOS
-            base_dir = Path.home() / ".config"
+            self.log_dir = Path.home() / ".config"
 
-        token_dir = base_dir / "Quantlib"
+        token_dir = self.log_dir / "Quantlib"
         token_dir.mkdir(parents=True, exist_ok=True)
 
         return token_dir / "token.json"
-    
-        
-    
+     
     def __init__(self):
         self.tokenFile = self.get_token_path() 
         if Path(self.tokenFile).exists():
@@ -97,7 +98,7 @@ class fyers_util:
 
     def login(self): 
         session = fyersModel.SessionModel(
-            client_id=self.client_id,
+            client_id=self.client_id,   
             secret_key=self.secret_key,
             redirect_uri=self.redirect_uri,
             response_type="code"
@@ -165,7 +166,7 @@ class fyers_util:
             client_id=self.client_id,  # replace with actual client_id
             is_async=False,
             token=self.access_token,
-            log_path="C:/fyers_logs/"
+            log_path=self.log_dir
         )
     
         # Build request payload
@@ -252,7 +253,7 @@ class fyers_util:
             raise ValueError(f"Failed to fetch data: {response}")
         
     def option_chain(self,symbol:str,strike_count:int = 5):
-        model = fyersModel.FyersModel(client_id=self.client_id, token=self.access_token,is_async=False, log_path="C:/fyers_logs/")
+        model = fyersModel.FyersModel(client_id=self.client_id, token=self.access_token,is_async=False, log_path=base_dir)
         data = {
             "symbol":symbol,
             "strikecount":strike_count,
@@ -311,8 +312,7 @@ def load_option(date,exchange,symbol,option,mob:bool):
     df = numericfy_df(df)
     
     return df.drop(columns=['exch_feed_time'])
-    
-    
+     
 def load_option_chain(date,exchange,symbol,mob:bool):
     option_chain = {}
     files = glob.glob(f'{base_dir}{date}/{exchange}/OPTIONS/{symbol}/*')
@@ -341,8 +341,6 @@ def load_stock(date,exchange,symbol,mob:bool):
     stock = numericfy_df(stock)
     return stock.drop(columns=['exch_feed_time'])
 
-import math    
-import datetime as dt
 def load_atm_options(date,exchange,symbol,strike_gap = 50,mob=False):
     underlying = load_index(date,exchange,symbol)
     start = underlying[underlying['timestamp'].dt.time >= dt.time(9, 15)]
@@ -375,7 +373,6 @@ def load_futures(date,exchange,symbol,mob:bool,index=True):
         
     
     return df
-
 
 def numericfy_df(df):
     for col in df.columns:

@@ -16,7 +16,6 @@ Requires-Dist: fyers-apiv3
 Requires-Dist: discord.py
 Requires-Dist: scikit-learn
 Requires-Dist: matplotlib
-Requires-Dist: xgboost
 Requires-Dist: google-auth
 Requires-Dist: google-auth-oauthlib
 Requires-Dist: google-api-python-client
