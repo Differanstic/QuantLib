@@ -36,7 +36,7 @@ class fyers_util:
 
         token_dir = self.log_dir / "Quantlib"
         token_dir.mkdir(parents=True, exist_ok=True)
-
+        self.log_dir = str(self.log_dir)
         return token_dir / "token.json"
      
     def __init__(self):
