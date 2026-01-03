@@ -12,5 +12,6 @@ from . import CatDB
 from . import visualize
 from . import volume_engg
 from . import kotak_neo
+from . import logger
 from .google_utils import google_utils
 from . import analyze

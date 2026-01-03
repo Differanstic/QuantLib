@@ -2,7 +2,7 @@ import os
 import json
 import time
 import gspread
-from . import utils
+from Quantlib.utils import is_linux_server
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as UserCredentials
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
@@ -37,7 +37,7 @@ class google_utils:
         """Authenticate using OS detection (Linux server vs local)."""
 
         creds = None
-        is_linux = utils.is_linux_server()
+        is_linux = is_linux_server()
 
 
         # 1️⃣ Load saved OAuth token (if exists)

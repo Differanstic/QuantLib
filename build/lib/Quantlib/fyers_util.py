@@ -36,7 +36,7 @@ class fyers_util:
 
         token_dir = self.log_dir / "Quantlib"
         token_dir.mkdir(parents=True, exist_ok=True)
-
+        self.log_dir = str(self.log_dir)
         return token_dir / "token.json"
      
     def __init__(self):
@@ -252,8 +252,8 @@ class fyers_util:
         else:
             raise ValueError(f"Failed to fetch data: {response}")
         
-    def option_chain(self,symbol:str,strike_count:int = 5):
-        model = fyersModel.FyersModel(client_id=self.client_id, token=self.access_token,is_async=False, log_path=base_dir)
+    def option_chain(self,symbol:str,strike_count:int = 5) -> dict:
+        model = fyersModel.FyersModel(client_id=self.client_id, token=self.access_token,is_async=False, log_path=self.log_dir)
         data = {
             "symbol":symbol,
             "strikecount":strike_count,

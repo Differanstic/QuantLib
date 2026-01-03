@@ -163,17 +163,15 @@ def backtest(df, entry_fn, exit_fn, record_col=[], tsl_fn=None):
     # ---------------------------------------------------------
     trades_df = pd.DataFrame(trades)
 
-    if len(trades_df) > 0:
+    if not len(trades_df) > 0:
+        net_pnl = 0
+    else:
         trades_df["pnl"] = (trades_df["gross_pnl"] - trades_df["charges"]).round(2)
         net_pnl = round(trades_df['pnl'].sum(),2)
-    else:
-        net_pnl = 0
-
         # Flatten recorded entry/exit columns
         for col in record_col:
             trades_df[f"entry_{col}"] = trades_df["entry_values"].apply(lambda d: d[col])
             trades_df[f"exit_{col}"]  = trades_df["exit_values"].apply(lambda d: d[col])
-
         trades_df = trades_df.drop(columns=["entry_values", "exit_values"])
 
     return trades_df, net_pnl

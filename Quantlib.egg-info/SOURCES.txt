@@ -8,6 +8,7 @@ Quantlib/feature_engg.py
 Quantlib/fyers_util.py
 Quantlib/google_utils.py
 Quantlib/kotak_neo.py
+Quantlib/logger.py
 Quantlib/memory.py
 Quantlib/option_greeks.py
 Quantlib/regime_detection.py
