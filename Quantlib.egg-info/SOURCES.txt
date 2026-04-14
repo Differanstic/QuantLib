@@ -12,6 +12,7 @@ Quantlib/logger.py
 Quantlib/memory.py
 Quantlib/option_greeks.py
 Quantlib/regime_detection.py
+Quantlib/technical_analysis.py
 Quantlib/utils.py
 Quantlib/visualize.py
 Quantlib/volume_engg.py

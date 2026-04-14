@@ -79,6 +79,13 @@ class google_utils:
                     self.creds_path, self.SCOPES
                 )
                 creds = flow.run_local_server(port=0)
+                auth_url, _ = flow.authorization_url(
+                    prompt='consent',
+                    access_type='offline'
+                )
+
+                print("🔗 Open this URL in browser:")
+                print(auth_url)
 
                 with open(self.token_path, "w") as token:
                     token.write(creds.to_json())

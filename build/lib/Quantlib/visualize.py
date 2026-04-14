@@ -54,7 +54,7 @@ def plot_df(df):
 
 
 
-def subplots(plot:list,showInBrowser:bool=False):
+def subplots(plot:list,title='Title',showInBrowser:bool=False):
     """
     Creates and displays multiple subplots using Plotly, with each subplot containing one or more line plots.
     Args:
@@ -68,8 +68,19 @@ def subplots(plot:list,showInBrowser:bool=False):
         None: The function displays the generated subplots and does not return any value.
     """
     
-    fig = make_subplots(rows=len(plot), cols=1, shared_xaxes=True, vertical_spacing=0.01,subplot_titles=('Title'))
-    fig.update_layout(template='plotly_dark')
+    fig = make_subplots(rows=len(plot), cols=1, shared_xaxes=True, vertical_spacing=0.01,subplot_titles=(title))
+    fig.update_layout(
+        xaxis=dict(
+            rangeslider_visible=False,
+            rangebreaks=[
+                # Remove weekends
+                dict(bounds=["sat", "mon"]),
+                
+                # Remove non-trading hours (modify if needed)
+                dict(bounds=[15.5, 9.25], pattern="hour")
+            ]
+        ),
+        template='plotly_dark')
     plot_number = 1
     for element in plot:
         for i in range(len(element[1])):
@@ -104,6 +115,16 @@ def plot_candlestick(df,price_col='ltp',timeframe='15min',showinBrowser= False,p
         xaxis_title="Time",
         yaxis_title="Price",
         xaxis_rangeslider_visible=False,
+        xaxis=dict(
+            rangeslider_visible=False,
+            rangebreaks=[
+                # Remove weekends
+                dict(bounds=["sat", "mon"]),
+                
+                # Remove non-trading hours (modify if needed)
+                dict(bounds=[15.5, 9.25], pattern="hour")
+            ]
+        ),
         template="plotly_dark"
     )
     if showinBrowser:

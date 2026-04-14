@@ -15,3 +15,4 @@ from . import kotak_neo
 from . import logger
 from .google_utils import google_utils
 from . import analyze
+from . import technical_analysis
