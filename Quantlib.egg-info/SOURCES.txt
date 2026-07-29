@@ -10,6 +10,7 @@ Quantlib/google_utils.py
 Quantlib/kotak_neo.py
 Quantlib/logger.py
 Quantlib/memory.py
+Quantlib/nse_scrapper.py
 Quantlib/option_greeks.py
 Quantlib/regime_detection.py
 Quantlib/technical_analysis.py
