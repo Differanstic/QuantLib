@@ -2,15 +2,20 @@ setup.py
 Quantlib/__init__.py
 Quantlib/analyze.py
 Quantlib/backtest.py
+Quantlib/candle_builder.py
 Quantlib/data_loader.py
 Quantlib/data_utils.py
+Quantlib/event_backtest.py
 Quantlib/feature_engg.py
 Quantlib/fyers_util.py
 Quantlib/google_utils.py
 Quantlib/kotak_neo.py
+Quantlib/live_feature_builder.py
 Quantlib/logger.py
+Quantlib/market_streamer.py
 Quantlib/memory.py
 Quantlib/nse_scrapper.py
+Quantlib/option_analysis.py
 Quantlib/option_greeks.py
 Quantlib/regime_detection.py
 Quantlib/technical_analysis.py
@@ -26,3 +31,4 @@ Quantlib/ml/__init__.py
 Quantlib/ml/feature_engineering.py
 Quantlib/ml/save_load.py
 Quantlib/ml/train.py
+tests/test_event_backtest.py

@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 from . import utils as u
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-
+import numpy as np
 
 
 # Open-To-Close Strat
@@ -22,8 +22,8 @@ def intraday_open_to_close(df, lot_size=1):
     }
     return trades
 
-import pandas as pd
-def backtest(df, entry_fn, exit_fn, record_col=[], tsl_fn=None):
+
+def backteset(df, entry_fn, exit_fn, record_col=[], tsl_fn=None):
     """
     Universal backtest engine with:
     - entry_fn(row, i, df)
@@ -49,9 +49,6 @@ def backtest(df, entry_fn, exit_fn, record_col=[], tsl_fn=None):
         price = row["ltp"]
         timestamp = row["timestamp"]
 
-        # ---------------------------------------------------------
-        # ENTRY LOGIC
-        # ---------------------------------------------------------
         if open_trade is None:
             cond, lot_size = entry_fn(row, i, df)
 
@@ -73,35 +70,27 @@ def backtest(df, entry_fn, exit_fn, record_col=[], tsl_fn=None):
                 }
             continue
 
-        # ---------------------------------------------------------
-        # CALCULATE TIME DELTA (SECONDS)
-        # ---------------------------------------------------------
+       
         delta_sec = (timestamp - open_trade["last_timestamp"]).total_seconds()
         if delta_sec < 0:
             delta_sec = 0  # safety
 
         open_trade["last_timestamp"] = timestamp
 
-        # ---------------------------------------------------------
-        # UPDATE TIF / TIA BASED ON CURRENT PRICE
-        # ---------------------------------------------------------
+       
         if price > open_trade["entry_price"]:
             open_trade["tif"] += delta_sec
         elif price < open_trade["entry_price"]:
             open_trade["tia"] += delta_sec
         
 
-        # ---------------------------------------------------------
-        # UPDATE STOPLOSS USING TSL FUNCTION
-        # ---------------------------------------------------------
+       
         if tsl_fn is not None:
             new_stop = tsl_fn(row, i, df, open_trade)
             if new_stop is not None:
                 open_trade["stop_price"] = new_stop
 
-        # ---------------------------------------------------------
-        # STOPLOSS EXIT CHECK
-        # ---------------------------------------------------------
+        
         if open_trade["stop_price"] is not None and price <= open_trade["stop_price"]:
             exit_price = open_trade["stop_price"]
 
@@ -174,7 +163,283 @@ def backtest(df, entry_fn, exit_fn, record_col=[], tsl_fn=None):
             trades_df[f"exit_{col}"]  = trades_df["exit_values"].apply(lambda d: d[col])
         trades_df = trades_df.drop(columns=["entry_values", "exit_values"])
 
-    return trades_df, net_pnl
+    return trades_df
+
+
+
+
+
+# Public event-driven engine. ``backteset`` above is the retained legacy
+# single-long helper; use ``backtest`` below for the current API.
+from .event_backtest import (
+    LONG, SHORT, BacktestContext, BacktestResult, BacktestValidationError,
+    Fill, Trade, backtest,
+)
+
+
+def trade_analysis(trades_df):
+    """
+    Calculate trade performance metrics from backtest output.
+    """
+
+    if trades_df is None or len(trades_df) == 0:
+        return {
+            "total_trades": 0,
+            "net_pnl": 0,
+        }
+
+    df = trades_df.copy()
+
+    # ---------------------------------------------------------
+    # BASIC
+    # ---------------------------------------------------------
+    total_trades = len(df)
+
+    wins = df[df["pnl"] > 0]
+    losses = df[df["pnl"] < 0]
+    breakeven = df[df["pnl"] == 0]
+
+    win_count = len(wins)
+    loss_count = len(losses)
+    breakeven_count = len(breakeven)
+
+    win_rate = win_count / total_trades
+    loss_rate = loss_count / total_trades
+
+    # ---------------------------------------------------------
+    # PNL
+    # ---------------------------------------------------------
+    gross_profit = wins["pnl"].sum()
+    gross_loss = losses["pnl"].sum()
+
+    net_pnl = df["pnl"].sum()
+
+    avg_pnl = df["pnl"].mean()
+
+    avg_win = wins["pnl"].mean() if win_count else 0
+    avg_loss = losses["pnl"].mean() if loss_count else 0
+
+    largest_win = df["pnl"].max()
+    largest_loss = df["pnl"].min()
+
+    # ---------------------------------------------------------
+    # PROFIT FACTOR
+    # ---------------------------------------------------------
+    if gross_loss != 0:
+        profit_factor = gross_profit / abs(gross_loss)
+    else:
+        profit_factor = np.inf
+
+    # ---------------------------------------------------------
+    # PAYOFF RATIO
+    # ---------------------------------------------------------
+    if avg_loss != 0:
+        payoff_ratio = avg_win / abs(avg_loss)
+    else:
+        payoff_ratio = np.inf
+
+    # ---------------------------------------------------------
+    # EXPECTANCY
+    #
+    # E = P(win)*AvgWin + P(loss)*AvgLoss
+    # ---------------------------------------------------------
+    expectancy = (
+        win_rate * avg_win +
+        loss_rate * avg_loss
+    )
+
+    # ---------------------------------------------------------
+    # EQUITY CURVE
+    # ---------------------------------------------------------
+    equity = df["pnl"].cumsum()
+
+    running_max = equity.cummax()
+
+    drawdown = equity - running_max
+
+    max_drawdown = abs(drawdown.min())
+
+    # Drawdown %
+    if running_max.max() != 0:
+        drawdown_pct = drawdown / running_max.abs().replace(0, np.nan)
+        max_drawdown_pct = abs(drawdown_pct.min()) * 100
+    else:
+        max_drawdown_pct = 0
+
+    # ---------------------------------------------------------
+    # RECOVERY FACTOR
+    # ---------------------------------------------------------
+    if max_drawdown != 0:
+        recovery_factor = net_pnl / max_drawdown
+    else:
+        recovery_factor = np.inf
+
+    # ---------------------------------------------------------
+    # SHARPE RATIO
+    #
+    # Trade-level Sharpe
+    # ---------------------------------------------------------
+    pnl_std = df["pnl"].std()
+
+    if pnl_std != 0 and not np.isnan(pnl_std):
+        sharpe = df["pnl"].mean() / pnl_std * np.sqrt(total_trades)
+    else:
+        sharpe = 0
+
+    # ---------------------------------------------------------
+    # SORTINO RATIO
+    # ---------------------------------------------------------
+    downside = df.loc[df["pnl"] < 0, "pnl"]
+
+    downside_std = downside.std()
+
+    if downside_std != 0 and not np.isnan(downside_std):
+        sortino = df["pnl"].mean() / downside_std * np.sqrt(total_trades)
+    else:
+        sortino = 0
+
+    # ---------------------------------------------------------
+    # CONSECUTIVE WINS / LOSSES
+    # ---------------------------------------------------------
+    result = np.sign(df["pnl"])
+
+    max_consecutive_wins = 0
+    max_consecutive_losses = 0
+
+    current_wins = 0
+    current_losses = 0
+
+    for r in result:
+
+        if r > 0:
+            current_wins += 1
+            current_losses = 0
+
+            max_consecutive_wins = max(
+                max_consecutive_wins,
+                current_wins
+            )
+
+        elif r < 0:
+            current_losses += 1
+            current_wins = 0
+
+            max_consecutive_losses = max(
+                max_consecutive_losses,
+                current_losses
+            )
+
+        else:
+            current_wins = 0
+            current_losses = 0
+
+    # ---------------------------------------------------------
+    # HOLDING TIME
+    # ---------------------------------------------------------
+    if "entry_time" in df.columns and "exit_time" in df.columns:
+
+        holding_time = (
+            pd.to_datetime(df["exit_time"]) -
+            pd.to_datetime(df["entry_time"])
+        ).dt.total_seconds()
+
+        avg_holding_time = holding_time.mean()
+        median_holding_time = holding_time.median()
+
+    else:
+        avg_holding_time = np.nan
+        median_holding_time = np.nan
+
+    # ---------------------------------------------------------
+    # TIF / TIA
+    # ---------------------------------------------------------
+    avg_tif = df["tif"].mean() if "tif" in df else np.nan
+    avg_tia = df["tia"].mean() if "tia" in df else np.nan
+
+    win_avg_tif = (
+        wins["tif"].mean()
+        if "tif" in wins and len(wins)
+        else np.nan
+    )
+
+    loss_avg_tia = (
+        losses["tia"].mean()
+        if "tia" in losses and len(losses)
+        else np.nan
+    )
+
+    # ---------------------------------------------------------
+    # CHARGES
+    # ---------------------------------------------------------
+    total_charges = (
+        df["charges"].sum()
+        if "charges" in df
+        else 0
+    )
+
+    gross_before_charges = (
+        df["gross_pnl"].sum()
+        if "gross_pnl" in df
+        else net_pnl + total_charges
+    )
+
+    # ---------------------------------------------------------
+    # RETURN
+    # ---------------------------------------------------------
+
+    return {
+
+        # Trades
+        "total_trades": total_trades,
+        "winning_trades": win_count,
+        "losing_trades": loss_count,
+        "breakeven_trades": breakeven_count,
+
+        # Hit rate
+        "win_rate": round(win_rate * 100, 2),
+        "loss_rate": round(loss_rate * 100, 2),
+
+        # PNL
+        "gross_pnl": round(gross_before_charges, 2),
+        "net_pnl": round(net_pnl, 2),
+        "total_charges": round(total_charges, 2),
+
+        "avg_trade": round(avg_pnl, 2),
+        "avg_win": round(avg_win, 2),
+        "avg_loss": round(avg_loss, 2),
+
+        "largest_win": round(largest_win, 2),
+        "largest_loss": round(largest_loss, 2),
+
+        # Quality
+        "profit_factor": round(profit_factor, 3),
+        "payoff_ratio": round(payoff_ratio, 3),
+        "expectancy": round(expectancy, 2),
+
+        # Risk
+        "max_drawdown": round(max_drawdown, 2),
+        "max_drawdown_pct": round(max_drawdown_pct, 2),
+
+        "recovery_factor": round(recovery_factor, 3),
+
+        "sharpe_ratio": round(sharpe, 3),
+        "sortino_ratio": round(sortino, 3),
+
+        # Streaks
+        "max_consecutive_wins": max_consecutive_wins,
+        "max_consecutive_losses": max_consecutive_losses,
+
+        # Time
+        "avg_holding_time_sec": round(avg_holding_time, 2),
+        "median_holding_time_sec": round(median_holding_time, 2),
+
+        # TIF / TIA
+        "avg_tif_sec": round(avg_tif, 2),
+        "avg_tia_sec": round(avg_tia, 2),
+
+        "winner_avg_tif_sec": round(win_avg_tif, 2),
+        "loser_avg_tia_sec": round(loss_avg_tia, 2),
+    }
 
 
 

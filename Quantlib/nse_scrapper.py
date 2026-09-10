@@ -126,7 +126,7 @@ class NSE_Scrapper:
         data = self._fetch_url(self.session, self.url + self.indexTrackerApi, params=params)
         return data['data']
     
-    def getIndexCorporateAction(self,index,flag='CAC'):
+    def getIndexCorporateAction( self,index,flag='CAC'):
         params = {
             "functionName": "getCorporateAction",
             "index": quote(index),

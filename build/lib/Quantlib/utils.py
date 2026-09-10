@@ -4,6 +4,73 @@ import platform
 def is_linux_server():
     return platform.system().lower() == "linux"
 
+from pathlib import Path
+import pandas as pd
+
+
+from pathlib import Path
+import pandas as pd
+
+
+def load_option(
+    date,
+    strike=0,
+    option_type="CE",
+    root = r'C:\historic_option_db',
+):
+    """
+    Load one option series for a given day.
+
+    Parameters
+    ----------
+    root : str
+        Parquet database root.
+
+    date : str
+        Example: "2022-01-04"
+
+    strike : int
+        Relative strike.
+            0  -> ATM
+            1  -> ATM+1
+            2  -> ATM+2
+           -1  -> ATM-1
+           -2  -> ATM-2
+
+    option_type : str
+        "CE" or "PE"
+    """
+    option_type = 'CALL' if option_type == 'CE' else 'PUT'
+    date = pd.Timestamp(date)
+
+    if strike == 0:
+        strike_label = "ATM"
+    elif strike > 0:
+        strike_label = f"ATM+{strike}"
+    else:
+        strike_label = f"ATM{strike}"      # e.g. ATM-2
+
+    file = (
+        Path(root)
+        / f"year={date.year}"
+        / f"month={date.month:02d}"
+        / f"day={date.day:02d}"
+        / "data.parquet"
+    )
+
+    df = pd.read_parquet(file)
+
+    df = df.loc[
+        (df["strike_label"] == strike_label)
+        & (df["option_type"] == option_type)
+    ].copy()
+
+    df.sort_values("datetime", inplace=True)
+    df.reset_index(drop=True, inplace=True)
+
+    return df
+
+
 
 def calculate_options_charges(buy_price, sell_price, quantity, brokerage = 00, exchange_txn_charges = 0.0003503,sebi_charges_per = 0.000001,stamp_duty_per = 0.00003):
     

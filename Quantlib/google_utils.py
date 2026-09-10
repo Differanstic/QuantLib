@@ -162,7 +162,7 @@ class google_utils:
             sh = self.gc.open_by_key(file_id)
             ws = sh.sheet1
             ws.append_rows(data)
-            print("✔ Data appended")
+            print("Data appended")
             return file_id
 
         # Create new sheet
@@ -184,14 +184,14 @@ class google_utils:
     # FILE UPLOAD
     # =========================================================
     def upload_file(self, file_path, folder, mime_type=None):
-        """Upload ANY file to Google Drive."""
+        """Upload ANY file ato Google Drive."""
         folder_id = self.resolve_folder_id(folder)
         file_name = os.path.basename(file_path)
 
         metadata = {"name": file_name, "parents": [folder_id]}
         media = MediaFileUpload(file_path, mimetype=mime_type)
 
-        file = self.drive.files().create(
+        file = self.drive.files().create(   
             body=metadata, media_body=media, fields="id"
         ).execute()
 

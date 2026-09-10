@@ -10,9 +10,6 @@ import glob
 from tqdm import tqdm
 import os
 import math    
-import datetime as dt
-import redis
-import socket
 
 
 
@@ -25,61 +22,59 @@ class fyers_util:
         raise ValueError("FYERS_SECRET_KEY environment variable is not set.")
     
     redirect_uri = "https://trade.fyers.in/api-login/redirect-uri/index.html"
-    log_dir = str(Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))) if os.name == 'nt' else str(Path.home() / ".config/fyers")
     
+    log_dir =  str(Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))) if os.name == 'nt' else str(Path.home() / ".config/fyers")
+    
+    def get_token_path(self):
+        """
+        Returns a consistent cross-platform path for token.json.
+        Windows → %APPDATA%/Quantlib/token.json
+        Linux   → ~/.config/Quantlib/token.json
+        """
+        if os.name == "nt":  # Windows
+            base_dir = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))
+        else:  # Linux / macOS
+            base_dir = Path.home() / ".config"
 
-    class TokenManager:
-        def __init__(self):
-            host = "localhost" if socket.gethostname() == "vm304023263" else "103.194.228.194"
-               
-            self.r = redis.Redis(
-                host=host,
-                port=6379,
-                password=os.getenv('REDIS_PASS'),
-                decode_responses=True
-            )
-            self.key = "fyers_token"
+        token_dir = base_dir / "Quantlib"
+        token_dir.mkdir(parents=True, exist_ok=True)
+
+        return token_dir / "token.json"
     
-        def set_token(self, access_token, expiry_seconds=86400):
-            data = access_token.copy()
-            data['expiry'] =(datetime.now() + timedelta(seconds=expiry_seconds)).isoformat()
-            self.r.set(self.key, json.dumps(data), ex=expiry_seconds)
-    
-        def get_token(self):
-            data = self.r.get(self.key)
-            if not data:
-                return None
-            
-            data = json.loads(data)
-            return data
-    
-        def is_expired(self):
-            data = self.r.get(self.key)
-            if not data:
-                return True
-            
-            data = json.loads(data)
-            expiry = datetime.fromisoformat(data["expiry"])
-            return datetime.utcnow() >= expiry
         
     
-     
     def __init__(self):
-            self.tokenManage = self.TokenManager()
-            tokens = self.tokenManage.get_token()
-            
-            if tokens and not self.tokenManage.is_expired():
+        self.tokenFile = self.get_token_path()
+        print(f"Token file path: {self.tokenFile}")
+
+        try:
+            with open(self.tokenFile, "r") as f:
+                tokens = json.load(f)
+
+            authTokenDate = datetime.strptime(
+                tokens['auth_token_date'],
+                '%Y-%m-%d %H:%M:%S'
+            )
+
+            isAboutToExpire = datetime.today().date() != authTokenDate.date()
+
+            if isAboutToExpire:
+                self.access_token, self.refresh_token, self.appIdHash = self.login()
+
+            else:
+                print("Logged In - Token.json")
                 self.access_token = tokens['auth_token']
                 self.appIdHash = tokens['app_id_hash']
-            
-            else: 
-                self.access_token,self.appIdHash = self.login()
-        
 
-    
+        except Exception as e:
+            print(f"Error reading token file: {e}. Initiating login.")
+            self.access_token, self.refresh_token, self.appIdHash = self.login()    
+
+
+
     def login(self): 
         session = fyersModel.SessionModel(
-            client_id=self.client_id,   
+            client_id=self.client_id,
             secret_key=self.secret_key,
             redirect_uri=self.redirect_uri,
             response_type="code"
@@ -106,6 +101,7 @@ class fyers_util:
         if data.get("s") == "ok":
             print("\n✅ Authentication Successful!")
             print("Access Token:", data["access_token"])
+            print("Refresh Token:", data["refresh_token"])
         else:
             print("\n❌ Authentication Failed:")
             print("Message:", data.get("message", "Unknown error"))
@@ -113,39 +109,60 @@ class fyers_util:
         tokenData = {
             'auth_token' : data['access_token'],
             'auth_token_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'refresh_token' :  data['refresh_token'],
+            'refresh_token_date' : datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'app_id_hash' : appIdHash
         }
-        self.tokenManage.set_token(tokenData)
+        with open(self.tokenFile, "w") as f:
+            json.dump(tokenData, f, indent=4)
         
         
-        return data['access_token'],appIdHash
-
-    def get_fyers_historical_df(self, symbol: str, resolution: str, start_date: str, end_date: str) -> pd.DataFrame:
+        return data['access_token'], data["refresh_token"],appIdHash
+    
+    def get_fyers_historical_df(self, symbol: str,  start_date: str, end_date: str, resolution: str,) -> pd.DataFrame:
         """
         Fetch historical data from Fyers API and return as a DataFrame.
-    
+
         Parameters:
-        - access_token (str): Valid Fyers access token
         - symbol (str): Symbol format like 'NSE:SBIN-EQ'
         - resolution (str): Timeframe (e.g. 'D', '5', '15', '60', '1')
-        - start_date (str): Start date in 'YYYY-MM-DD'
-        - end_date (str): End date in 'YYYY-MM-DD'
-    
+        - start_date (str): Start date in 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS' format
+        - end_date (str): End date in 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS' format
+
         Returns:
         - pd.DataFrame: DataFrame with columns: ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         """
-        # Convert date strings to Unix timestamps
-        from_timestamp = int(time.mktime(time.strptime(start_date, "%Y-%m-%d")))
-        to_timestamp = int(time.mktime(time.strptime(end_date, "%Y-%m-%d")))
-    
-        # Initialize Fyers client
+        import time
+        import pandas as pd
+        from fyers_apiv3 import fyersModel
+
+        # Detect date format and convert to timestamp
+        def parse_date_to_timestamp(date_str):
+            """Convert date string to Unix timestamp, handling both date-only and datetime formats."""
+            try:
+                # Try datetime format first (with time)
+                dt = time.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+                return int(time.mktime(dt))
+            except ValueError:
+                try:
+                    # Try date-only format
+                    dt = time.strptime(date_str, "%Y-%m-%d")
+                    return int(time.mktime(dt))
+                except ValueError:
+                    raise ValueError(f"Invalid date format: {date_str}. Expected 'YYYY-MM-DD' or 'YYYY-MM-DD HH:MM:SS'")
+
+        # Convert dates to Unix timestamps
+        from_timestamp = parse_date_to_timestamp(start_date)
+        to_timestamp = parse_date_to_timestamp(end_date)
+
+        # Initialize Fyers model
         fyers = fyersModel.FyersModel(
-            client_id=self.client_id,  # replace with actual client_id
+            client_id=self.client_id, 
             is_async=False,
             token=self.access_token,
             log_path=self.log_dir
         )
-    
+
         # Build request payload
         data = {
             "symbol": symbol,
@@ -155,165 +172,150 @@ class fyers_util:
             "range_to": str(to_timestamp),
             "cont_flag": "1"
         }
-    
+
         # Get historical data
         response = fyers.history(data=data)
-    
-        # Handle response
+
         if response.get("s") == "ok" and "candles" in response:
             candles = response["candles"]
-            df = pd.DataFrame(candles, columns=["timestamp", "open", "high", "low", "close", "volume"])
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s", utc=True)
-            df["timestamp"] = df["timestamp"].dt.tz_convert("Asia/Kolkata")
-            df["timestamp"] = df["timestamp"].dt.strftime("%d-%m-%Y %H:%M:%S")
-            return df
+            if candles:  # Check if we have data
+                df = pd.DataFrame(candles, columns=["timestamp", "open", "high", "low", "close", "volume"])
+                df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s", utc=True)
+                df["timestamp"] = df["timestamp"].dt.tz_convert("Asia/Kolkata")
+                df["timestamp"] = df["timestamp"].dt.strftime("%d-%m-%Y %H:%M:%S")
+                return df
+            else:
+                # No candles returned
+                
+                return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
         else:
-            raise ValueError(f"Failed to fetch data: {response}")
-    
+            # Handle no_data response gracefully
+            if response.get("s") == "no_data":
+                
+                return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
+            else:
+                raise ValueError(f"Failed to fetch data: {response}")
 
-    def get_historic_db(
-        fyer,
-        symbol,
-        start_date,
-        end_date,
-        resolution='D',
-        data_dir="C:/historic_data/"
-    ):
+    
+    def get_historic_db(self, symbol, start_date, end_date, resolution='D', data_dir="C:/historic_data/"):
         """
-        Fetch historical data from Fyers.
-        Uses local Parquet storage to avoid repeated API calls.
+        Fetch historical data with caching.
         """
+        from datetime import datetime, timedelta
+        import os
+        import pandas as pd
 
         os.makedirs(data_dir, exist_ok=True)
 
-        # Clean filename
         symbol_clean = symbol.replace(":", "_").replace("-", "_")
         file_path = os.path.join(data_dir, f"{symbol_clean}_{resolution}.parquet")
 
         start = datetime.strptime(start_date, "%Y-%m-%d")
         end = datetime.strptime(end_date, "%Y-%m-%d")
+        now = datetime.now()
 
-        # -----------------------------------
-        # 1️⃣ Load local data if exists
-        # -----------------------------------
+        # Load existing data
+        local_df = pd.DataFrame()
         if os.path.exists(file_path):
-            local_df = pd.read_parquet(file_path)
-            local_df.sort_values("timestamp", inplace=True)
+            try:
+                local_df = pd.read_parquet(file_path)
+                if not local_df.empty:
+                    local_df["timestamp"] = pd.to_datetime(local_df["timestamp"])
+                    local_df.sort_values("timestamp", inplace=True)
+            except:
+                local_df = pd.DataFrame()
 
+        all_dfs = []
+        fetch_ranges = []
+
+        # Determine missing ranges
+        if local_df.empty:
+            fetch_ranges.append((start, end))
+        else:
             local_start = local_df["timestamp"].min()
             local_end = local_df["timestamp"].max()
 
-           
-        else:
-            local_df = pd.DataFrame()
-            local_start = None
-            local_end = None
-
-        all_dfs = []
-
-        # -----------------------------------
-        # 2️⃣ Determine missing date ranges
-        # -----------------------------------
-        if local_start is None:
-            fetch_ranges = [(start, end)]
-        else:
-            fetch_ranges = []
+            # Check if today's data needs refresh
+            refresh_today = False
+            if end.date() >= now.date() and not local_df.empty:
+                today_data = local_df[local_df["timestamp"].dt.date == now.date()]
+                if today_data.empty or today_data["timestamp"].max() < now:
+                    refresh_today = True
+                    # Remove today's data from local_df
+                    local_df = local_df[local_df["timestamp"].dt.date != now.date()]
+                    # Update local_end after removing today's data
+                    if not local_df.empty:
+                        local_end = local_df["timestamp"].max()
+                    else:
+                        local_end = None
 
             if start < local_start:
                 fetch_ranges.append((start, local_start - timedelta(days=1)))
 
-            if end > local_end:
-                fetch_ranges.append((local_end + timedelta(days=1), end))
+            if end > local_end or refresh_today:
+                if refresh_today and local_end is not None:
+                    fetch_start = local_end + timedelta(days=1)
+                elif refresh_today:
+                    fetch_start = start
+                else:
+                    fetch_start = local_end + timedelta(days=1)
 
-        # -----------------------------------
-        # 3️⃣ Fetch only missing data
-        # -----------------------------------
+                fetch_end = end if end < now else now
+                fetch_ranges.append((fetch_start, fetch_end))
+
+        # Fetch in 50-day chunks
         for fetch_start, fetch_end in fetch_ranges:
             temp_start = fetch_start
-
             while temp_start <= fetch_end:
                 chunk_end = min(temp_start + timedelta(days=49), fetch_end)
 
-               
+                # If chunk includes today, include time
+                if chunk_end.date() == now.date():
+                    end_str = now.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    end_str = chunk_end.strftime("%Y-%m-%d")
 
-                df_chunk = fyer.get_fyers_historical_df(
-                    symbol,
-                    resolution=resolution,
-                    start_date=temp_start.strftime("%Y-%m-%d"),
-                    end_date=chunk_end.strftime("%Y-%m-%d")
-                )
+                try:
+                    df_chunk = self.get_fyers_historical_df(
+                        symbol,
+                        temp_start.strftime("%Y-%m-%d"),
+                        end_str
+                        ,resolution
+                    )
+                    if not df_chunk.empty:
+                        df_chunk["timestamp"] = pd.to_datetime(df_chunk["timestamp"], format="%d-%m-%Y %H:%M:%S")
+                        # Filter today's data to current time
+                        if chunk_end.date() == now.date():
+                            df_chunk = df_chunk[df_chunk['timestamp'] <= now]
+                        all_dfs.append(df_chunk)
+                except Exception as e:
+                    print(f"Error fetching {temp_start} to {chunk_end}: {e}")
 
-                all_dfs.append(df_chunk)
                 temp_start = chunk_end + timedelta(days=1)
 
-        # -----------------------------------
-        # 4️⃣ Combine + Save updated Parquet
-        # -----------------------------------
+        # Combine and save
         if all_dfs:
-            new_df = pd.concat(all_dfs, ignore_index=True)
-
-            if not local_df.empty:
-                full_df = pd.concat([local_df, new_df], ignore_index=True)
-            else:
-                full_df = new_df
-
-            # Ensure datetime
-            full_df["timestamp"] = pd.to_datetime(full_df["timestamp"],format ='%d-%m-%Y %H:%M:%S')
-
-            # Remove duplicates
+            full_df = pd.concat([local_df] + all_dfs, ignore_index=True) if not local_df.empty else pd.concat(all_dfs, ignore_index=True)
+            full_df["timestamp"] = pd.to_datetime(full_df["timestamp"])
             full_df.drop_duplicates(subset=["timestamp"], inplace=True)
             full_df.sort_values("timestamp", inplace=True)
-
-            # Save as Parquet
             full_df.to_parquet(file_path, index=False)
-           
         else:
-           
             full_df = local_df
+            if full_df.empty:
+                full_df.to_parquet(file_path, index=False)
 
-        # -----------------------------------
-        # 5️⃣ Return only requested range
-        # -----------------------------------
-        mask = (
-            (full_df["timestamp"] >= pd.to_datetime(start_date)) &
-            (full_df["timestamp"] <= pd.to_datetime(end_date))
-        )
+        # Return requested range
+        if not full_df.empty:
+            mask = (full_df["timestamp"] >= pd.to_datetime(start_date)) & (full_df["timestamp"] <= pd.to_datetime(end_date))
+            return full_df.loc[mask].reset_index(drop=True)
 
-        return full_df.loc[mask].reset_index(drop=True)
-
-    def get_intraday_data(self,symbol,start_date,end_date,resolution):
-        import time
-        fyers = fyersModel.FyersModel(client_id=self.client_id,is_async=False,token=self.access_token,log_path="C:/fyers_logs/")
-        from_timestamp = int(time.mktime(time.strptime(start_date, "%Y-%m-%d %H:%M:%S")))
-        to_timestamp = int(time.mktime(time.strptime(end_date, "%Y-%m-%d %H:%M:%S")))
-        data = {
-            "symbol": symbol,
-            "resolution": resolution,
-            "date_format": "0",
-        "range_from": str(from_timestamp),
-        "range_to": str(to_timestamp),
-        "cont_flag": "1"
-    }
+        return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
     
-                # Get historical data
-        response = fyers.history(data=data)
-        # Handle response
-        if response.get("s") == "ok" and "candles" in response:
-            candles = response["candles"]
-            df = pd.DataFrame(candles, columns=["timestamp", "open", "high", "low", "close", "volume"])
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s", utc=True)
-            df["timestamp"] = df["timestamp"].dt.tz_convert("Asia/Kolkata")
-            df["timestamp"] = df["timestamp"].dt.strftime("%d-%m-%Y %H:%M:%S")
-            return df
-        else:
-            raise ValueError(f"Failed to fetch data: {response}")
+
+    
         
-    def option_chain(
-                    self,
-                    symbol:str,
-                    strike_count:int = 5,
-                    expiry: int = 0
-        ) -> dict:
+    def option_chain(self,symbol:str,strike_count:int = 5,expiry: int = 0) -> dict:
         
         model = fyersModel.FyersModel(client_id=self.client_id, token=self.access_token,is_async=False, log_path=self.log_dir)
         

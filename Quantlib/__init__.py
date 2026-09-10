@@ -1,18 +1,8 @@
-from . import fyers_util
-from . import backtest
-from . import data_loader
-from . import data_utils
-from . import feature_engg
-from . import memory
-from . import messager
-from . import option_greeks
-from . import regime_detection
-from . import utils
-from . import CatDB
-from . import visualize
-from . import volume_engg
-from . import kotak_neo
-from . import logger
-from .google_utils import google_utils
-from . import analyze
-from . import technical_analysis
+"""Quantlib research utilities.
+
+Submodules are intentionally not imported eagerly: several integrations have
+optional third-party dependencies, while ``Quantlib.backtest`` should remain
+usable in a lightweight research environment.
+"""
+
+__all__ = []

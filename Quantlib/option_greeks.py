@@ -302,8 +302,8 @@ def option_greeks(S, K, T, r, sigma, call: bool):
     # Use Numba-accelerated primitives
     dlt = float(delta(S, K, T, r, sigma, call))
     gmm = float(gamma(S, K, T, r, sigma))
-    vga = float(vega(S, K, T, r, sigma)) / 100.0  # per 1% change in vol
-    th = float(theta(S, K, T, r, sigma, call)) / 365.0  # per day
+    vga = float(vega(S, K, T, r, sigma)) / 100.0  
+    th = float(theta(S, K, T, r, sigma, call)) / 365.0
 
     return {
         'delta': dlt,
